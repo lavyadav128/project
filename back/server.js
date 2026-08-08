@@ -9,7 +9,17 @@ import { floodData, stateList } from "./data/floodData.js";
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = [
+  "https://projectt-nj3g.onrender.com"
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
 app.use(express.json({ limit: "1mb" }));
 
 // -----------------------------------------------------------------------
