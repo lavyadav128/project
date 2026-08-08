@@ -2,6 +2,26 @@ import { useEffect, useRef, useState } from "react";
 import { t, LANGUAGE_NAMES } from "../data/i18n.js";
 import { sendChatMessage } from "../api.js";
 
+// Maps our UI language codes to BCP-47 locale tags for the Web Speech API.
+// (Browser support for some Indian languages varies — Chrome/Edge on
+// Android and desktop generally cover all of these; Punjabi support can
+// be patchy on some browsers, in which case it silently falls back to
+// whatever the browser understands, or errors out gracefully.)
+const SPEECH_LOCALES = {
+  en: "en-IN",
+  hi: "hi-IN",
+  bn: "bn-IN",
+  mr: "mr-IN",
+  ta: "ta-IN",
+  te: "te-IN",
+  gu: "gu-IN",
+  pa: "pa-IN",
+};
+
+function getSpeechRecognition() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
 export default function ChatWindow({
   language,
   state,
@@ -11,12 +31,23 @@ export default function ChatWindow({
 }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceUnsupported, setVoiceUnsupported] = useState(false);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
+
+  // Stop any in-progress recognition when the component unmounts
+  // (e.g. user switches conversation) so the mic doesn't stay hot.
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   function autoResize() {
     const el = textareaRef.current;
@@ -25,10 +56,56 @@ export default function ChatWindow({
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
   }
 
+  function handleMicClick() {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const SpeechRecognition = getSpeechRecognition();
+    if (!SpeechRecognition) {
+      setVoiceUnsupported(true);
+      setTimeout(() => setVoiceUnsupported(false), 4000);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = SPEECH_LOCALES[language] || "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setInput(transcript);
+      requestAnimationFrame(autoResize);
+    };
+
+    recognition.onerror = () => {
+      setListening(false);
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
   async function handleSend(e) {
     e?.preventDefault();
     const text = input.trim();
     if (!text || loading) return;
+
+    if (listening) {
+      recognitionRef.current?.stop();
+    }
 
     const nextMessages = [...messages, { role: "user", content: text }];
     onMessagesChange(nextMessages);
@@ -122,7 +199,23 @@ export default function ChatWindow({
       </div>
 
       <div className="composer-wrap">
+        {voiceUnsupported && (
+          <div className="voice-unsupported-note">{t(language, "voiceNotSupported")}</div>
+        )}
         <form className="composer" onSubmit={handleSend}>
+          <button
+            type="button"
+            className={`mic-btn ${listening ? "listening" : ""}`}
+            onClick={handleMicClick}
+            aria-label={listening ? t(language, "listening") : "Voice input"}
+          >
+            {listening && <span className="mic-pulse" aria-hidden="true" />}
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="2" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+
           <textarea
             ref={textareaRef}
             rows={1}
@@ -132,7 +225,7 @@ export default function ChatWindow({
               autoResize();
             }}
             onKeyDown={handleKeyDown}
-            placeholder={t(language, "typePlaceholder")}
+            placeholder={listening ? t(language, "listening") : t(language, "typePlaceholder")}
           />
           <button type="submit" className="send-btn" disabled={!input.trim() || loading} aria-label={t(language, "send")}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
