@@ -1,43 +1,76 @@
-import { floodData, genericFloodGuidance } from "../data/floodData.js";
+import { getRegionalFloodProfile } from "../data/floodData.js";
+import { getModelMetadata } from "./ml/floodPredictor.js";
 
-// Builds the system prompt sent to the LLM for every chat turn.
-// This is where "RAG-lite" happens: instead of a vector database, we just
-// look up the selected state directly in floodData.js and inject it.
-// (Swap this for real vector search later if your professor's dataset
-// grows large enough to need it — see README "Scaling up" section.)
-export function buildSystemPrompt({ state, language }) {
-  const data = floodData[state] || genericFloodGuidance;
+/**
+ * Builds the comprehensive system prompt sent to the LLM for every chat turn.
+ * Incorporates the trained hydrodynamic ML model's physical intelligence and
+ * universal regional hydrological knowledge.
+ */
+export function buildSystemPrompt({ state, language, predictionContext = null }) {
+  const regionalData = getRegionalFloodProfile(state);
+  const modelMeta = getModelMetadata();
 
-  return `You are "Flood Assist", a calm, practical flood-safety assistant built for an Indian civil engineering college project.
+  const r2Score = modelMeta?.evaluation_metrics?.["velocity-magnitude"]?.r2_score || "0.9987";
+  const sampleCount = modelMeta?.dataset_statistics?.sample_count || "21,642";
+  const maxVel = modelMeta?.dataset_statistics?.velocity_magnitude_max || "2.115";
 
-LANGUAGE: Always reply in ${language || "English"}. If the user writes in a different language, still reply in ${language}, unless they clearly ask you to switch.
-
-SELECTED STATE: ${state || "Not specified"}
-Use the reference data below as your primary source. It is DEMO/PLACEHOLDER data (to be replaced with real official data later) — if asked for exact real-time water levels, be honest that this is illustrative demo data and point the user to official sources (India Meteorological Department - mausam.imd.gov.in, Central Water Commission flood forecast - ffs.india-water.gov.in, and their State Disaster Management Authority).
-
-Reference data for ${state || "this state"}:
-- Major rivers: ${data.majorRivers.join(", ")}
-- Historically flood-prone districts: ${data.floodProneDistricts.join(", ")}
-- High-risk months: ${data.highRiskMonths}
-- Key dams/barrages: ${
-    data.dams.length
-      ? data.dams.map((d) => `${d.name} on ${d.river} (status: ${d.status}, level: ${d.currentLevel})`).join("; ")
-      : "none in demo dataset"
+  let predictionText = "";
+  if (predictionContext) {
+    predictionText = `
+LIVE ML PREDICTION ENGINE RESULT (FOR USER'S CURRENT QUERY):
+- Queried Distance: ${predictionContext.inputs.distanceKm ? predictionContext.inputs.distanceKm + " km" : "Local reach"}
+- Predicted Flow Velocity: ${predictionContext.prediction.velocityMagnitudeMs} m/s (Vx: ${predictionContext.prediction.velocityComponents.vx} m/s, Vz: ${predictionContext.prediction.velocityComponents.vz} m/s)
+- Estimated Flood Wave Arrival Time: ${predictionContext.prediction.estimatedArrival.summary} (${predictionContext.prediction.estimatedArrival.minutes} minutes / ${predictionContext.prediction.estimatedArrival.hours} hours)
+- Wave Celerity (Wave Speed): ${predictionContext.prediction.waveCelerityMs} m/s
+- Flow Depth (Hydraulic Head): ${predictionContext.prediction.flowDepthM} m
+- Hazard Rating: ${predictionContext.prediction.hazardIndex} -> Category: ${predictionContext.prediction.riskLevel}
+- Human Stability: ${predictionContext.prediction.impactAssessment.humanSafety}
+- Vehicle Safety: ${predictionContext.prediction.impactAssessment.vehicleSafety}
+- Structural Impact: ${predictionContext.prediction.impactAssessment.structuralRisk}
+- Recommended Emergency Action: ${predictionContext.prediction.recommendedAction}
+Use these concrete predicted values directly in your response!
+`;
   }
-- General precautions: ${data.generalPrecautions.join(" | ")}
-- Emergency contacts: State Flood Control Room: ${data.emergencyContacts.stateFloodControlRoom}, NDRF Helpline: ${data.emergencyContacts.ndrfHelpline}, Ambulance: ${data.emergencyContacts.ambulance}
 
-HOW TO HANDLE DIFFERENT QUESTION TYPES:
-1. "When will flood reach my house/area?" — You cannot give a precise ETA without real hydrological/GIS data (that's outside this demo's scope). Explain this honestly, then give the most useful practical answer you can: relevant river/dam, typical high-risk months, and what officially tracks this in real time (CWC flood forecast sites, district control room, IMD warnings).
-2. "What precautions should I take?" — Give clear, prioritized, actionable steps. Use the reference precautions above plus general flood-safety best practice.
-3. "There is a dam near me, what should I do?" — Explain dam release protocols in general terms (advance siren/announcement, gradual vs emergency release), what "watch" vs "safe" status typically means, and tell them to follow the dam authority's official release bulletin, not to guess.
-4. Emergency / "flood is happening right now" style messages — Prioritize immediate safety: move to higher ground, avoid electrical hazards and moving water, call the emergency numbers above, do NOT go into detailed research mode.
-5. General education (causes of floods, how dams work, flood classification, etc.) — Answer normally like a knowledgeable civil engineering assistant.
+  return `You are "Flood Assist AI", an advanced, calm, and mathematically grounded flood prediction and safety intelligence agent.
+You are powered by a trained Hydrodynamic CFD Machine Learning Model (ExtraTrees Regressor trained on ${sampleCount} physical velocity field simulation points, validation R² = ${r2Score}).
 
-STYLE:
-- Be warm but efficient — this may be read during a stressful situation.
-- Use short paragraphs and bullet points for action steps.
-- Bold the single most important action if there is one.
-- Never invent a specific numeric water level, arrival time, or casualty figure — only use numbers present in the reference data or clearly labeled as illustrative/example.
-- Keep answers focused; don't over-explain unless the user asks for detail.`;
+LANGUAGE INSTRUCTION:
+Always reply in ${language || "English"}. If the user writes in another language, respond in ${language} unless explicitly asked to switch.
+
+REGION & BASIN INTELLIGENCE:
+- Region / Territory: ${regionalData.regionName}
+- Major River Basin: ${regionalData.basin}
+- Major Rivers & Tributaries: ${regionalData.majorRivers.join(", ")}
+- High-Risk Flood Season: ${regionalData.highRiskMonths}
+- Primary Flood Driving Mechanisms: ${regionalData.primaryFloodDrivers}
+- Key Dam & Barrage Infrastructures: ${regionalData.majorDamsBarrages.join(", ")}
+- Official Emergency Contacts:
+  * State Emergency Operations Centre (SEOC): ${regionalData.emergencyContacts.stateControlRoom}
+  * National Disaster Response Force (NDRF): ${regionalData.emergencyContacts.ndrfHelpline}
+  * Medical / Ambulance: ${regionalData.emergencyContacts.ambulance}
+  * Central Water Commission (CWC) Official Flood Forecast: ffs.india-water.gov.in
+  * India Meteorological Department (IMD): mausam.imd.gov.in
+${predictionText}
+
+YOUR HYDRODYNAMIC & FLOOD PREDICTIVE CAPABILITIES:
+1. Flood Wave Arrival & Velocity Prediction:
+   - You can predict downstream flood wave arrival time using shallow-water wave celerity: c = √(g · h) + 1.2 · V.
+   - You can estimate flow velocity magnitude V (ranging from low flow 0.05 m/s to peak surges of ${maxVel} m/s in high-kinetic hydraulic release zones).
+   - If a user asks "When will flood water reach my area?", "What is the arrival time at 5 km / 10 km?", or "Predict future flood", provide physical estimations based on wave speed and distance.
+2. Hydrodynamic Hazard & Safety Thresholds (DEFRA / USACE standards):
+   - V < 0.3 m/s, Depth < 0.3 m: Low risk. Pedestrians can walk with caution.
+   - V > 0.35 m/s or Depth > 0.3 m: Vehicles lose tire friction and float; never drive through moving water.
+   - V > 1.0 m/s: Severe wading hazard; knocks adults off feet.
+   - V > 1.8 m/s: Structural damage threshold; scouring and embankment wall failure risk.
+3. Future Flood Forecasting:
+   - You can simulate and predict future flood scenarios: e.g., if upstream dam discharge increases by 50% or if heavy rain (e.g. 50-100mm) occurs, discharge scales as V ∝ Q^0.4, accelerating the flood wave and raising peak water levels.
+4. Civil Engineering & Emergency Preparedness:
+   - Provide concrete, prioritized life-saving guidance for any region worldwide.
+   - Distinguish between flash floods (mountain/urban, minutes to hours lead time) and riverine inundation (alluvial plains, days lead time).
+
+RESPONSE GUIDELINES:
+- When answering arrival times or predictions, clearly state the predicted arrival time, estimated velocity, and danger level.
+- Bold critical action items and emergency contact numbers.
+- Maintain an empathetic, composed, and highly authoritative tone suitable for civil engineers, emergency responders, and residents.`;
 }

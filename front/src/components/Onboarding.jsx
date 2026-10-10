@@ -2,9 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { LANGUAGES, t } from "../data/i18n.js";
 import { fetchStates } from "../api.js";
 
-// Free, no-API-key reverse geocoding service (OpenStreetMap Nominatim).
-// Converts GPS coordinates into a human-readable address, which we use
-// to read out the "state" field for India.
 async function reverseGeocode(lat, lon) {
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=8&addressdetails=1`;
   const res = await fetch(url, {
@@ -18,8 +15,6 @@ function normalize(str) {
   return (str || "").toLowerCase().trim();
 }
 
-// Matches the state name returned by Nominatim against our known list of
-// states (the ones we actually have flood data for).
 function matchState(detectedName, knownStates) {
   if (!detectedName) return null;
   const target = normalize(detectedName);
@@ -32,18 +27,19 @@ function matchState(detectedName, knownStates) {
 }
 
 export default function Onboarding({ onComplete }) {
-  const [step, setStep] = useState(1); // 1 = language, 2 = location
+  const [step, setStep] = useState(1);
   const [language, setLanguage] = useState(null);
 
   const [states, setStates] = useState([]);
   const [loadingStates, setLoadingStates] = useState(true);
   const [statesError, setStatesError] = useState(null);
 
-  // location detection status: "idle" | "locating" | "found" | "not-matched" | "denied" | "error"
   const [locStatus, setLocStatus] = useState("idle");
-  const [detectedState, setDetectedState] = useState(null); // matched state object
-  const [detectedRawName, setDetectedRawName] = useState(null); // raw address text, for "not matched" message
+  const [detectedState, setDetectedState] = useState(null);
+  const [detectedRawName, setDetectedRawName] = useState(null);
   const [manualPick, setManualPick] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [customRegion, setCustomRegion] = useState("");
   const hasAutoStarted = useRef(false);
 
   const lang = language || "en";
@@ -60,7 +56,6 @@ export default function Onboarding({ onComplete }) {
       hasAutoStarted.current = true;
       detectLocation();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, states]);
 
   function detectLocation() {
@@ -101,6 +96,18 @@ export default function Onboarding({ onComplete }) {
   function confirmState(stateObj) {
     onComplete({ language: lang, state: stateObj.name });
   }
+
+  function confirmCustom(customName) {
+    const trimmed = (customName || "").trim();
+    if (!trimmed) return;
+    onComplete({ language: lang, state: trimmed });
+  }
+
+  const filteredStates = states.filter((s) =>
+    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.basin && s.basin.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (s.majorRivers && s.majorRivers.some((r) => r.toLowerCase().includes(searchQuery.toLowerCase())))
+  );
 
   return (
     <div className="onboard">
@@ -145,7 +152,7 @@ export default function Onboarding({ onComplete }) {
 
             {statesError && (
               <p className="muted error-text">
-                Couldn't reach the backend ({statesError}). Is it running on port 5000?
+                Couldn't reach backend ({statesError}). Ensure server is running.
               </p>
             )}
 
@@ -184,12 +191,17 @@ export default function Onboarding({ onComplete }) {
                   {locStatus === "denied" && t(lang, "locationDenied")}
                   {locStatus === "error" && t(lang, "locationError")}
                   {locStatus === "not-matched" &&
-                    `${t(lang, "locationNotMatched")}${detectedRawName ? ` (${detectedRawName})` : ""}`}
+                    (detectedRawName ? `Detected "${detectedRawName}". You can proceed or pick manually.` : t(lang, "locationNotMatched"))}
                 </p>
+                {locStatus === "not-matched" && detectedRawName && (
+                  <button className="primary-btn" style={{ marginTop: 8 }} onClick={() => confirmCustom(detectedRawName)}>
+                    Continue with "{detectedRawName}"
+                  </button>
+                )}
               </div>
             )}
 
-            {!manualPick && (locStatus === "found") && (
+            {!manualPick && locStatus === "found" && (
               <div className="onboard-actions" style={{ marginTop: 4 }}>
                 <button className="ghost-btn" onClick={() => setManualPick(true)}>
                   {t(lang, "selectManually")}
@@ -200,7 +212,7 @@ export default function Onboarding({ onComplete }) {
               </div>
             )}
 
-            {!manualPick && (locStatus === "denied" || locStatus === "error" || locStatus === "not-matched") && (
+            {!manualPick && (locStatus === "denied" || locStatus === "error" || (locStatus === "not-matched" && !detectedRawName)) && (
               <div className="onboard-actions" style={{ marginTop: 4 }}>
                 <button className="ghost-btn" onClick={detectLocation}>
                   {t(lang, "tryAgain")}
@@ -213,8 +225,19 @@ export default function Onboarding({ onComplete }) {
 
             {manualPick && (
               <>
+                <div className="search-state-wrap">
+                  <input
+                    type="text"
+                    className="state-search-input"
+                    placeholder="Search any state, territory or river basin…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+
                 <div className="state-grid">
-                  {states.map((s) => (
+                  {filteredStates.map((s) => (
                     <button key={s.name} className="state-tile" onClick={() => confirmState(s)}>
                       <span className="state-name">{s.name}</span>
                       <span className="state-meta">
@@ -223,9 +246,31 @@ export default function Onboarding({ onComplete }) {
                     </button>
                   ))}
                 </div>
+
+                {/* Custom Region / Basin option */}
+                <div className="custom-region-box">
+                  <span className="custom-region-label">Or enter any custom district, basin or city:</span>
+                  <div className="custom-region-form">
+                    <input
+                      type="text"
+                      placeholder="e.g. Varanasi, Konaseema, Ganga Basin"
+                      value={customRegion}
+                      onChange={(e) => setCustomRegion(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="primary-btn compact"
+                      disabled={!customRegion.trim()}
+                      onClick={() => confirmCustom(customRegion)}
+                    >
+                      Use
+                    </button>
+                  </div>
+                </div>
+
                 <div className="onboard-actions">
                   <button className="ghost-btn" onClick={() => setStep(1)}>
-                    ←
+                    ← Back
                   </button>
                 </div>
               </>

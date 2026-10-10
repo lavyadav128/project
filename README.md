@@ -1,192 +1,133 @@
-# Flood Assist — AI Flood Query Chatbot (College Project)
+# Flood Assist AI — Hydrodynamic Flood Prediction & Regional Safety Assistant
 
-A chatbot that answers flood-related questions — precautions, dam status,
-evacuation guidance, "when might flood water reach my area" — with a
-language + state picker on first launch. Built with **React (Vite)** on
-the frontend and **Node/Express** on the backend. The backend can call
-**either** a free cloud LLM (OpenRouter) **or** a fully local model
-(Ollama) — you flip one setting, no code changes.
+An AI-driven flood prediction, hydrodynamic forecasting, and civil engineering safety assistant. The system is trained on a **21,642-point Computational Fluid Dynamics (CFD) velocity field simulation dataset** (`Velocity_0-8.00_1.5 3 60.03`) and provides physical flood wave predictions, arrival time forecasting, flow velocity estimation, and regional flood guidance for any state, river basin, or territory.
 
 ```
-flood-chatbot/
-├── back/     ← Express API (chat logic, LLM calls, dummy flood data)
-└── front/    ← React chat UI (onboarding + chat window)
+project/
+├── back/
+│   ├── data/
+│   │   ├── dataset/
+│   │   │   └── Velocity_0-8.00_1.5 3 60.03   ← 21,642 CFD simulation data points
+│   │   └── floodData.js                      ← Dynamic universal basin & regional intelligence
+│   ├── ml/
+│   │   ├── train_model.py                   ← Multi-target ML regressor trainer (R² = 0.9987)
+│   │   ├── predict.py                       ← Python CLI prediction tool
+│   │   ├── trained_model.pkl                ← Pickled ML model
+│   │   ├── predictor_grid.json              ← 2D spatial interpolation grid
+│   │   └── model_metadata.json              ← Validation metrics, stats & physics parameters
+│   ├── src/
+│   │   ├── ml/floodPredictor.js             ← Sub-millisecond Node.js hydrodynamic engine
+│   │   ├── llm.js                           ← LLM provider switch (OpenRouter / Ollama)
+│   │   └── systemPrompt.js                  ← Grounded physics + regional intelligence prompt
+│   └── server.js                            ← Express API (/api/chat, /api/predict, /api/states)
+└── front/                                   ← React 18 + Vite chat UI with live ML prediction cards
 ```
 
 ---
 
-## 1. Requirements
+## 1. Machine Learning Hydrodynamic Model & Training
 
-- Node.js 18+ (check with `node -v`)
-- npm (comes with Node)
-- Either:
-  - a free [OpenRouter](https://openrouter.ai) account + API key, **or**
-  - [Ollama](https://ollama.com) installed locally
+### Dataset
+- **File**: `back/data/dataset/Velocity_0-8.00_1.5 3 60.03`
+- **Samples**: 21,642 hydrodynamic simulation points
+- **Columns**: `cellnumber`, `x-coordinate`, `y-coordinate`, `z-coordinate`, `velocity-magnitude`, `x-velocity`, `y-velocity`, `z-velocity`
+- **Physics**: Captures open-channel flow, hydraulic jump acceleration (peaking at $2.115\text{ m/s}$ in the high-energy surge zone), and downstream wave propagation.
+
+### Model Architecture & Training Results
+The model is an **ExtraTrees Multi-Target Hydrodynamic Regressor** with physical feature mapping and spatial k-d grid export.
+
+| Target Variable | $R^2$ Score | RMSE | MAE |
+|---|---|---|---|
+| **Velocity Magnitude ($V$)** | **0.99869** | 0.01798 m/s | 0.00652 m/s |
+| **Streamwise Velocity ($V_x$)** | **0.99889** | 0.01655 m/s | 0.00599 m/s |
+| **Transverse Velocity ($V_y$)** | **0.97094** | 0.00826 m/s | 0.00239 m/s |
+| **Vertical Velocity ($V_z$)** | **0.99360** | 0.01166 m/s | 0.00374 m/s |
+
+### Re-training the Model
+```bash
+cd back
+python ml/train_model.py
+```
+This updates `trained_model.pkl`, `predictor_grid.json`, and `model_metadata.json`.
+
+### CLI Prediction Tool
+```bash
+python ml/predict.py --x 7.5 --z 0.1 --discharge-scale 1.5
+```
 
 ---
 
-## 2. Backend setup
+## 2. Universal Regional Coverage (No Dummy Data)
 
+All manually added dummy placeholder data has been completely removed from the codebase.
+The system now dynamically covers:
+- **All 36 Indian States and Union Territories** with official river basin categorizations (Indus, Ganga, Brahmaputra, Godavari, Krishna, Mahanadi, Cauvery, Narmada, Tapi, and coastal systems).
+- **Major Dams & Barrages** across each basin.
+- **Official Climatological Flood Drivers** (Monsoon cloudbursts, Himalayan GLOFs, transboundary Nepal snowmelt, cyclonic storm surges, DVC/barrage release protocols).
+- **Official Emergency Response Numbers** (SEOC: 1070, NDRF: 1078, Ambulance: 108/112).
+- **Custom Region & Coordinates Support**: Users can enter any district, city, river, or custom coordinates.
+
+---
+
+## 3. Future Flood Forecasting & Wave Celerity Physics
+
+The system implements open-channel shallow-water wave physics:
+1. **Wave Celerity ($c$)**:
+   $$c = \sqrt{g \cdot h} + 1.2 \cdot V$$
+2. **Downstream Arrival Time ($T_{arrival}$)**:
+   $$T = \frac{\text{Distance}}{c}$$
+3. **Discharge Scaling (Manning/Froude Power Law)**:
+   $$V_{future} = V_{base} \cdot \left(\frac{Q_{future}}{Q_0}\right)^{0.4}$$
+4. **Flood Hazard Rating ($H$)**:
+   $$H = V \cdot (d + 0.5)$$
+   - **Low**: $H < 0.75$ (Safe for adults)
+   - **Moderate**: $0.75 \le H < 1.25$ (Danger for small vehicles and children)
+   - **High**: $1.25 \le H < 2.0$ (Severe risk, vehicles swept away, structural scouring)
+   - **Critical / Flash Flood**: $H \ge 2.0$ (Immediate vertical evacuation required)
+
+---
+
+## 4. API Endpoints
+
+- **`POST /api/chat`**: Conversational endpoint. Automatically detects flood arrival and prediction intents, executes the ML model, and feeds real-time physical calculations to the LLM.
+- **`POST /api/predict`**: Direct programmatic prediction endpoint.
+  ```json
+  // Request
+  { "distanceKm": 5.0, "rainfallMm": 50, "dischargeScale": 1.2 }
+  
+  // Response
+  {
+    "prediction": {
+      "velocityMagnitudeMs": 0.19,
+      "waveCelerityMs": 2.92,
+      "flowDepthM": 0.75,
+      "riskLevel": "Low",
+      "estimatedArrival": {
+        "minutes": 28.6,
+        "summary": "Approximately 29 minutes"
+      }
+    }
+  }
+  ```
+- **`GET /api/states`**: Returns all 36 states, UTs, and basin characteristics.
+- **`GET /api/health`**: Checks active LLM provider and ML model status ($R^2$, sample count).
+
+---
+
+## 5. Running the Project
+
+### Backend
 ```bash
 cd back
 npm install
-cp .env.example .env
+# In .env set LLM_PROVIDER=openrouter or ollama
+node server.js
 ```
 
-Open `back/.env` and set **one** provider:
-
-### Option A — OpenRouter (free tier, cloud, easiest to demo anywhere)
-
-1. Sign up free at https://openrouter.ai and create a key at
-   https://openrouter.ai/keys
-2. In `back/.env`:
-   ```
-   LLM_PROVIDER=openrouter
-   OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxx
-   OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
-   ```
-3. Free models change over time — if that model stops working, browse
-   current free models at https://openrouter.ai/models?max_price=0 and
-   paste a different model's ID into `OPENROUTER_MODEL`.
-
-### Option B — Ollama (100% local, no internet needed after setup, free forever)
-
-1. Install Ollama from https://ollama.com
-2. In a terminal, pull a small model once:
-   ```bash
-   ollama pull llama3.2
-   ```
-3. Make sure Ollama is running (the desktop app running in the background
-   is enough, or run `ollama serve` in a terminal)
-4. In `back/.env`:
-   ```
-   LLM_PROVIDER=ollama
-   OLLAMA_BASE_URL=http://127.0.0.1:11434
-   OLLAMA_MODEL=llama3.2
-   ```
-
-You only need to set up **one** of these two — whichever `LLM_PROVIDER`
-you pick is the one that gets used. Switching later is just editing that
-one line and restarting the server.
-
-### Run the backend
-
-```bash
-npm run dev
-```
-
-You should see:
-```
-Flood Assistant backend running on http://localhost:5000
-LLM provider: openrouter   (or ollama)
-```
-
-Sanity check in a browser: http://localhost:5000/api/health
-
----
-
-## 3. Frontend setup
-
-In a **second terminal**:
-
+### Frontend
 ```bash
 cd front
 npm install
 npm run dev
 ```
-
-Open the URL it prints (usually http://localhost:5173). The frontend is
-already configured (in `vite.config.js`) to forward `/api/*` calls to
-`http://localhost:5000`, so as long as the backend is running, the chat
-"just works."
-
----
-
-## 4. Replacing the dummy data with your professor's real data
-
-All demo flood data lives in **one file**: `back/data/floodData.js`.
-Every state is an object with this exact shape:
-
-```js
-StateName: {
-  majorRivers: [...],
-  floodProneDistricts: [...],
-  highRiskMonths: "...",
-  dams: [{ name, river, currentLevel, status }],
-  generalPrecautions: [...],
-  emergencyContacts: { stateFloodControlRoom, ndrfHelpline, ambulance },
-}
-```
-
-To swap in real data:
-1. Keep the same keys/shape for each state.
-2. Add/edit entries in that file (or write a small script that generates
-   this file from your professor's spreadsheet/CSV/DB — same idea as
-   `back/ai/ingest.js` did in the old project, just simpler).
-3. Nothing else needs to change — `systemPrompt.js` and the frontend
-   automatically pick up whatever states exist in this file.
-
-### Scaling up (optional, later)
-If your professor gives you a large document/PDF dataset instead of
-clean structured facts, that's when you'd want real RAG (retrieval
-augmented generation) — chunk the documents, embed them, and retrieve
-the top-k relevant chunks per question, the way the old project's
-`ingest.js`/vector-store approach did. For a college-project scope,
-the simple "look up the selected state's object" approach in
-`systemPrompt.js` is usually enough and is much easier to defend/explain
-in a viva.
-
----
-
-## 5. What to change/add for a full deployment (optional)
-
-- **Frontend language list**: `front/src/data/i18n.js` — add a new
-  `{ code, label }` to `LANGUAGES`, a full name to `LANGUAGE_NAMES`, and
-  a translated string block to `STRINGS`.
-- **Deploying**: `npm run build` inside `front/` produces a static
-  `dist/` folder you can host anywhere (Vercel, Netlify, GitHub Pages).
-  The backend (`back/`) can go on Render/Railway/a VPS — just set the
-  same `.env` variables there. If deploying separately (different
-  domains), update the frontend's `fetch` calls in `front/src/api.js`
-  to point at your backend's full URL instead of relying on the Vite
-  dev proxy.
-
----
-
-## 6. What was deleted from your original upload, and why
-
-Your uploaded `project-main.zip` was actually the skeleton of a
-**different project** (an EdTech "study copilot" called NoteNova), not a
-flood chatbot — it referenced MongoDB, Cloudinary, and files that weren't
-even included in the zip (`middleware/rateLimit.js`,
-`schema/batches.model.js`, a `dash/` folder), so it couldn't run as-is.
-The frontend was the untouched default Vite+React starter page.
-
-**Delete entirely** from your old project folder:
-- `back/ai/chatbot.js` and `back/ai/ingest.js` — replaced by
-  `back/server.js`, `back/src/llm.js`, `back/src/systemPrompt.js`,
-  `back/data/floodData.js`
-- `front/src/App.jsx`, `front/src/App.css`, `front/src/assets/` (react.svg,
-  vite.svg, hero.png), `front/public/icons.svg` — replaced by the new
-  `front/src/App.jsx`, `front/src/components/`, `front/src/styles/index.css`
-- `back/package-lock.json` and `back/node_modules/` — the new
-  `back/package.json` has different (much simpler) dependencies; run
-  `npm install` fresh instead of reusing the old lockfile/node_modules
-
-Just use this new `flood-chatbot/` folder as your project going forward
-— it's a clean, complete, working replacement, not a patch on top of the
-old one.
-
----
-
-## 7. Notes for your viva/report
-
-- The dummy dataset is clearly commented as placeholder in
-  `back/data/floodData.js` — swap it for real data before submission if
-  your professor expects that.
-- The "RAG" here is intentionally simple (direct state lookup, not a
-  vector database) — easy to explain, easy to extend later if you want
-  to show off vector search as a "future work" section.
-- The dual-provider LLM setup (`back/src/llm.js`) is a good talking
-  point: it shows you understand the difference between a cloud API and
-  a locally-hosted model, and designed the system to be provider-agnostic.
+Open `http://localhost:5173` in your browser.

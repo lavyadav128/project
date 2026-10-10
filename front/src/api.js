@@ -1,4 +1,3 @@
-
 import { API_BASE_URL } from "./environment.js";
 
 export async function fetchStates() {
@@ -37,6 +36,40 @@ export async function sendChatMessage({
     throw new Error(data.error || "Something went wrong.");
   }
 
-  return data.reply;
+  return {
+    reply: data.reply,
+    prediction: data.prediction || null,
+  };
 }
 
+export async function predictFlood({
+  distanceKm,
+  depthM,
+  dischargeScale,
+  rainfallMm,
+  damReleaseM3s,
+  x,
+  z,
+}) {
+  const res = await fetch(`${API_BASE_URL}/api/predict`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      distanceKm,
+      depthM,
+      dischargeScale,
+      rainfallMm,
+      damReleaseM3s,
+      x,
+      z,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || "Prediction request failed.");
+  }
+  return data;
+}
