@@ -125,7 +125,7 @@ export function predictHydrodynamics({
   }
 
   return {
-    model: "Hydrodynamic ExtraTrees CFD Forecaster",
+    model: modelMeta?.model_type || "Multi-Scenario Hydrodynamic CFD Spatial Regressor",
     trainedSamples: stats.sample_count,
     r2Score: modelMeta.evaluation_metrics["velocity-magnitude"].r2_score,
     inputs: {

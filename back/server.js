@@ -10,6 +10,7 @@ import { predictHydrodynamics, getModelMetadata } from "./src/ml/floodPredictor.
 dotenv.config();
 
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(cors({
   origin: true,
@@ -70,9 +71,9 @@ app.get("/api/health", (req, res) => {
     ok: true,
     provider: currentProvider(),
     mlModel: {
-      type: meta?.model_type || "ExtraTrees Hydrodynamic CFD Forecaster",
-      samples: meta?.dataset_statistics?.sample_count || 21642,
-      r2Score: meta?.evaluation_metrics?.["velocity-magnitude"]?.r2_score || 0.9987,
+      type: meta?.model_type || "Multi-Scenario Hydrodynamic CFD Spatial Regressor",
+      samples: meta?.dataset_statistics?.sample_count || 316616,
+      r2Score: meta?.evaluation_metrics?.["velocity-magnitude"]?.r2_score || 0.9885,
     },
   });
 });
@@ -195,7 +196,11 @@ const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
   console.log(`\nFlood Assistant AI backend running on http://localhost:${PORT}`);
   console.log(`LLM provider: ${currentProvider()}`);
-  console.log(`Trained CFD Hydrodynamic ML Model: Online (R² = 0.9987, 21,642 samples)\n`);
+  const meta = getModelMetadata();
+  const samples = meta?.dataset_statistics?.sample_count ? meta.dataset_statistics.sample_count.toLocaleString() : "316,616";
+  const r2 = meta?.evaluation_metrics?.["velocity-magnitude"]?.r2_score || 0.9885;
+  const regimes = meta?.dataset_statistics?.regime_count || 13;
+  console.log(`Trained CFD Hydrodynamic ML Model: Online (R² = ${r2}, ${samples} samples across ${regimes} simulation regimes)\n`);
 });
 
 server.timeout = 0;

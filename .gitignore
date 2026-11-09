@@ -1,0 +1,25 @@
+# Node dependencies
+node_modules/
+back/node_modules/
+front/node_modules/
+
+# Build artifacts
+dist/
+build/
+front/dist/
+
+# Environment files
+.env
+*.env.local
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.ipynb_checkpoints
+
+# Logs & OS artifacts
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

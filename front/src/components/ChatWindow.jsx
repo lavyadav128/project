@@ -192,7 +192,7 @@ export default function ChatWindow({
           <span>{t(language, "appName")}</span>
           <span className="chat-topbar-state">{state}</span>
         </div>
-        <div className="chat-model-badge" title="Trained on CFD Velocity Field Dataset (21,642 samples, R²=0.9987)">
+        <div className="chat-model-badge" title="Trained on 13 CFD Velocity Field Regimes (316,616 samples, R²=0.9885)">
           <span className="ai-pulse" /> ML CFD Forecaster Active
         </div>
       </header>
@@ -200,7 +200,7 @@ export default function ChatWindow({
       <div className="chat-scroll" ref={scrollRef}>
         <div className="chat-inner">
           <div className="disclaimer-pill">
-            🌊 Powered by Trained Hydrodynamic CFD Model (21,642 points) • Real-time flood wave arrival, flow velocity & safety sequence
+            🌊 Powered by Trained Hydrodynamic CFD Model (316,616 points across 13 simulation regimes) • Real-time flood wave arrival, flow velocity & safety sequence
           </div>
 
           {messages.map((m, i) => {

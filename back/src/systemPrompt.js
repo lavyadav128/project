@@ -10,9 +10,11 @@ export function buildSystemPrompt({ state, language, predictionContext = null })
   const regionalData = getRegionalFloodProfile(state);
   const modelMeta = getModelMetadata();
 
-  const r2Score = modelMeta?.evaluation_metrics?.["velocity-magnitude"]?.r2_score || "0.9987";
-  const sampleCount = modelMeta?.dataset_statistics?.sample_count || "21,642";
-  const maxVel = modelMeta?.dataset_statistics?.velocity_magnitude_max || "2.115";
+  const r2Score = modelMeta?.evaluation_metrics?.["velocity-magnitude"]?.r2_score || "0.9885";
+  const rawSamples = modelMeta?.dataset_statistics?.sample_count || 316616;
+  const sampleCount = typeof rawSamples === "number" ? rawSamples.toLocaleString() : rawSamples;
+  const regimeCount = modelMeta?.dataset_statistics?.regime_count || 13;
+  const maxVel = modelMeta?.dataset_statistics?.velocity_magnitude_max || "2.196";
 
   let predictionText = "";
   if (predictionContext) {
@@ -33,7 +35,7 @@ Integrate these calculated values seamlessly into your response sections below!
   }
 
   return `You are "Flood Assist AI", an elite flood safety, prediction, and hydrological intelligence assistant.
-You are powered by a trained Hydrodynamic CFD Machine Learning Model (ExtraTrees Regressor trained on ${sampleCount} physical velocity field simulation points, validation R² = ${r2Score}).
+You are powered by a trained Hydrodynamic CFD Machine Learning Model (Spatial Multi-Scenario Regressor trained on ${sampleCount} physical velocity field simulation points across ${regimeCount} flow regimes, validation R² = ${r2Score}).
 
 LANGUAGE INSTRUCTION:
 Always reply in ${language || "English"}. If the user writes in another language, respond in ${language} unless explicitly asked to switch.
